@@ -18,6 +18,10 @@ black_list = set()
 #错误请求计数
 error_mutex = threading.Lock()
 error_count = dict()
+#内存池
+mem_pool_mutex = threading.Lock()
+mem_pool = dict()
+
 #从请求中读取文件路径
 def read_request(request):
     get = False
@@ -30,8 +34,12 @@ def safe_check(file_path):
         return False
     else:
         return True
+
+def get_time():
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 #处理请求函数
-def handle_connection(client_connection, client_address, current_time):
+def handle_connection(client_connection, client_address):
+    current_time = get_time()
     localtime = time.localtime(time.time())
     client_address = client_address[0]
     #查询是否在黑名单中
@@ -45,22 +53,29 @@ def handle_connection(client_connection, client_address, current_time):
     #默认请求
     if file_path == '/':
         file_path = '/index.html'
-    print(current_time + ' ' + client_address + ' ' + method  + ' ' + file_path)
+
     code = 200
     #发送文件
     if safe_check(file_path):
-        try:
-            f = open(ROOT + file_path,'rb')
-            http_response = f.read();
+        if file_path in mem_pool:
+            http_response = mem_pool[file_path]
+        else:
             try:
-                client_connection.sendall(http_response)
+                f = open(ROOT + file_path,'rb')
+                http_response = f.read()
+                f.close()
+                #放入内存池
+                mem_pool_mutex.acquire()
+                mem_pool[file_path] = http_response
+                mem_pool_mutex.release()
             except:
-                code = 200
-            f.close()
+                client_connection.sendall("HTTP/1.1 404 NOT FOUND".encode("utf-8"))
+                success = False
+                code = 404
+        try:
+            client_connection.sendall(http_response)
         except:
-            client_connection.sendall("HTTP/1.1 404 NOT FOUND".encode("utf-8"))
-            success = False
-            code = 404
+            code = 200
     else:
         code = 403
         client_connection.sendall("HTTP/1.1 403 FORBIDDEN".encode("utf-8"))
@@ -76,6 +91,7 @@ def handle_connection(client_connection, client_address, current_time):
         else:
             error_count[client_address] = 1
         error_mutex.release()
+    print(current_time + ' ' + str(code) + ' ' + client_address + ' ' + method  + ' ' + file_path)
     client_connection.close()
 
 if __name__ == "__main__":
@@ -87,6 +103,5 @@ if __name__ == "__main__":
     threadPool = ThreadPoolExecutor(max_workers = MAX_WORKER, thread_name_prefix = "test_")
     while True:
         client_connection, client_address = listen.accept()
-        current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-        future = threadPool.submit(handle_connection, client_connection, client_address, current_time)
+        future = threadPool.submit(handle_connection, client_connection, client_address)
     threadPool.shutdown(wait = True)
