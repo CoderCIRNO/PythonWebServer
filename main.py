@@ -70,12 +70,14 @@ def handle_connection(client_connection, client_address):
                 mem_pool_mutex.release()
             except:
                 client_connection.sendall("HTTP/1.1 404 NOT FOUND".encode("utf-8"))
-                success = False
                 code = 404
-        try:
-            client_connection.sendall(http_response)
-        except:
-            code = 200
+        if code == 200:
+            try:
+                client_connection.sendall(http_response)
+            except:
+                print(current_time + ' BrokenPipe ' + client_address + ' ' + method  + ' ' + file_path)
+                client_connection.close()
+                return
     else:
         code = 403
         client_connection.sendall("HTTP/1.1 403 FORBIDDEN".encode("utf-8"))
