@@ -12,6 +12,9 @@ ROOT = "/var/www"
 MAX_WORKER = 4
 #最大容许错误请求数
 MAX_ERROR_COUNT = 5
+
+#不会被拉黑的状态码
+safe_code = [200]
 #黑名单
 black_mutex = threading.Lock()
 black_list = set()
@@ -24,7 +27,6 @@ mem_pool = dict()
 
 #从请求中读取文件路径
 def read_request(request):
-    get = False
     first = request.find(' ')
     second = request.find(' ', first + 1)
     return request[:first], request[first + 1:second]
@@ -40,7 +42,6 @@ def get_time():
 #处理请求函数
 def handle_connection(client_connection, client_address):
     current_time = get_time()
-    localtime = time.localtime(time.time())
     client_address = client_address[0]
     #查询是否在黑名单中
     if client_address in black_list:
@@ -69,20 +70,13 @@ def handle_connection(client_connection, client_address):
                 mem_pool[file_path] = http_response
                 mem_pool_mutex.release()
             except:
-                client_connection.sendall("HTTP/1.1 404 NOT FOUND".encode("utf-8"))
                 code = 404
-        if code == 200:
-            try:
-                client_connection.sendall(http_response)
-            except:
-                print(current_time + ' BrokenPipe ' + client_address + ' ' + method  + ' ' + file_path)
-                client_connection.close()
-                return
+                http_response = "HTTP/1.1 404 NOT FOUND".encode("utf-8")
     else:
         code = 403
-        client_connection.sendall("HTTP/1.1 403 FORBIDDEN".encode("utf-8"))
+        http_response = "HTTP/1.1 403 FORBIDDEN".encode("utf-8")
 
-    if code != 200:
+    if code not in safe_code:
         error_mutex.acquire()
         if client_address in error_count:
             error_count[client_address] += 1
@@ -93,7 +87,14 @@ def handle_connection(client_connection, client_address):
         else:
             error_count[client_address] = 1
         error_mutex.release()
+
     print(current_time + ' ' + str(code) + ' ' + client_address + ' ' + method  + ' ' + file_path)
+
+    try:
+        client_connection.sendall(http_response)
+    except:
+        print(current_time + ' BrokenPipe ' + client_address + ' ' + method  + ' ' + file_path)
+
     client_connection.close()
 
 if __name__ == "__main__":
