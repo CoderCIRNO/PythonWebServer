@@ -106,11 +106,8 @@ if __name__ == "__main__":
     listen.bind((HOST, PORT))
     listen.listen(5)
     print('Serving HTTP on port %s ...' % PORT)
+    threadPool = ThreadPoolExecutor(max_workers = MAX_WORKER)
     while True:
-        day = get_day()
-        threadPool = ThreadPoolExecutor(max_workers = MAX_WORKER)
-        while get_day() == day:
-            client_connection, client_address = listen.accept()
-            future = threadPool.submit(handle_connection, client_connection, client_address)
-        print(get_time() + ' Restarting')
-        threadPool.shutdown(wait = True)
+        client_connection, client_address = listen.accept()
+        future = threadPool.submit(handle_connection, client_connection, client_address)
+    threadPool.shutdown(wait = True)
